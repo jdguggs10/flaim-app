@@ -3,9 +3,88 @@ Player data and statistics module for ESPN Fantasy Baseball MCP Server
 Handles player stats, free agents, and player queries
 """
 
-from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, player_to_dict
+from typing import Dict, Any, Optional, List, Generator, Tuple
+import traceback
+from rapidfuzz import fuzz
+from utils import league_service, handle_error, player_to_dict, log_error
 from auth import auth_service
+
+def fuzzy_match_name(search_term: str, player_name: str, threshold: int = 80) -> Tuple[bool, int]:
+    """Perform fuzzy matching between a search term and a player name.
+
+    Args:
+        search_term: The search term to match against
+        player_name: The player's name to search in
+        threshold: Minimum score (0-100) to consider it a match
+
+    Returns:
+        Tuple of (is_match, score) where score is the match percentage (0-100)
+    """
+    if not search_term or not player_name:
+        return False, 0
+
+    # Simple case-insensitive substring match (fast path)
+    search_lower = search_term.lower()
+    if search_lower in player_name.lower():
+        return True, 100
+
+    # Try different fuzzy matching strategies
+    # 1. Partial ratio (best for partial name matches)
+    score = fuzz.partial_ratio(search_lower, player_name.lower())
+    if score >= threshold:
+        return True, score
+
+    # 2. Token set ratio (handles word order differences)
+    score = fuzz.token_set_ratio(search_lower, player_name.lower())
+    if score >= threshold:
+        return True, score
+
+    # 3. Try matching first name only
+    search_parts = search_lower.split()
+    name_parts = player_name.lower().split()
+
+    if len(search_parts) > 1 and len(name_parts) > 1:
+        # Try matching just first names
+        if search_parts[0] == name_parts[0]:
+            return True, 85  # First name match is good enough
+
+    return False, score
+
+def get_paginated_free_agents(league, batch_size: int = 100, max_players: int = 1000) -> Generator[Any, None, None]:
+    """Generator that yields free agents in batches to handle pagination.
+
+    Args:
+        league: The league object to fetch free agents from
+        batch_size: Number of players to fetch in each batch (default 100)
+        max_players: Maximum total players to fetch (default 1000)
+
+    Yields:
+        Player objects one at a time
+    """
+    offset = 0
+    total_players = 0
+
+    while total_players < max_players:
+        try:
+            batch = league.free_agents(size=batch_size, offset=offset)
+            if not batch:
+                break
+
+            for player in batch:
+                if total_players >= max_players:
+                    return
+                yield player
+                total_players += 1
+
+            offset += batch_size
+
+            # If we got fewer players than requested, we've reached the end
+            if len(batch) < batch_size:
+                break
+
+        except Exception as e:
+            log_error(f"Error fetching free agents batch (offset={offset}): {str(e)}")
+            break
 
 def get_player_stats(league_id: int, player_name: str, year: Optional[int] = None,
                     session_id: str = "default_session") -> Dict[str, Any]:
@@ -43,16 +122,35 @@ def get_player_stats(league_id: int, player_name: str, year: Optional[int] = Non
             if player:
                 break
         
-        # If not found in rosters, search free agents
+        # If not found in rosters, search free agents with pagination & fuzzy matching
         if not player:
             try:
-                free_agents = league.free_agents(size=200)  # Get a larger pool to search
-                for fa_player in free_agents:
-                    if player_name.lower() in fa_player.name.lower():
-                        player = fa_player
-                        break
-            except Exception:
-                pass  # If free agents search fails, continue with what we have
+                for fa_player in get_paginated_free_agents(league, batch_size=200, max_players=1000):
+                    try:
+                        player_name_lower = player_name.lower()
+                        fa_name = getattr(fa_player, 'name', '')
+
+                        # First try exact match for performance
+                        if player_name_lower in fa_name.lower():
+                            player = fa_player
+                            break
+
+                        # Then try fuzzy match if exact match fails
+                        is_match, score = fuzzy_match_name(player_name, fa_name, threshold=80)
+                        if is_match:
+                            log_error(f"Fuzzy match found: '{player_name}' -> '{fa_name}' (score: {score})")
+                            player = fa_player
+                            break
+
+                    except Exception as player_error:
+                        log_error(f"Error processing player {getattr(fa_player, 'name', 'unknown')}: {str(player_error)}")
+                        continue
+
+            except Exception as e:
+                error_msg = f"Error searching free agents: {str(e)}"
+                log_error(error_msg)
+                log_error(f"Stack trace: {traceback.format_exc()}")
+                return {"error": error_msg, "details": "Failed to search free agents"}
         
         if not player:
             return {"error": f"Player '{player_name}' not found in league {league_id}"}
@@ -71,15 +169,13 @@ def get_player_stats(league_id: int, player_name: str, year: Optional[int] = Non
             player_stats["fantasy_team"] = None
             player_stats["status"] = "FREE_AGENT"
         
-        # Add weekly stats if available
+        # Add weekly and season stats if available
         if hasattr(player, "stats") and player.stats:
             from metadata import STATS_MAP
             
-            # Convert weekly/recent stats if available
-            weekly_stats = {}
-            season_stats = {}
+            weekly_stats: Dict[str, Any] = {}
+            season_stats: Dict[str, Any] = {}
             
-            # ESPN API sometimes provides stats with different time periods
             for period, period_stats in player.stats.items():
                 converted_stats = {}
                 for stat_id, value in period_stats.items():
@@ -193,7 +289,6 @@ def get_free_agents(league_id: int, week: Optional[int] = None, position: Option
                     
             except Exception as e:
                 # If we can't process an individual player, log and continue
-                from utils import log_error
                 log_error(f"Error processing free agent: {str(e)}")
                 continue
         
@@ -315,45 +410,58 @@ def search_players(league_id: int, search_term: str, include_rostered: bool = Tr
         matching_players = []
         search_lower = search_term.lower()
         
-        # Search rostered players
+        # Search rostered players first
         if include_rostered:
             for team in league.teams:
                 for player in team.roster:
                     if search_lower in player.name.lower():
                         player_dict = player_to_dict(player)
-                        player_dict["status"] = "ROSTERED"
-                        player_dict["fantasy_team"] = {
-                            "team_id": getattr(team, "team_id", None),
-                            "team_name": getattr(team, "team_name", "Unknown"),
-                            "owner": getattr(team, "owner", "Unknown")
-                        }
+                        player_dict.update({
+                            "status": "ROSTERED",
+                            "fantasy_team": {
+                                "team_id": getattr(team, "team_id", None),
+                                "team_name": getattr(team, "team_name", "Unknown"),
+                                "owner": getattr(team, "owner", "Unknown")
+                            },
+                            "match_score": 100
+                        })
                         matching_players.append(player_dict)
         
-        # Search free agents
-        if include_free_agents:
+        # Search free agents with pagination & fuzzy matching
+        if include_free_agents and len(matching_players) < 50:
             try:
-                free_agents = league.free_agents(size=100)  # Get more for better search
-                for player in free_agents:
-                    if search_lower in player.name.lower():
-                        player_dict = player_to_dict(player)
-                        player_dict["status"] = "FREE_AGENT"
-                        player_dict["fantasy_team"] = None
-                        matching_players.append(player_dict)
-            except Exception:
-                pass  # If free agents search fails, continue with rostered players
+                for player in get_paginated_free_agents(league, batch_size=200, max_players=1000):
+                    try:
+                        player_name = getattr(player, 'name', '')
+                        is_match, score = fuzzy_match_name(search_term, player_name, threshold=80)
+                        if is_match:
+                            player_dict = player_to_dict(player)
+                            player_dict.update({
+                                "status": "FREE_AGENT",
+                                "match_score": score,
+                                "fantasy_team": None
+                            })
+                            matching_players.append(player_dict)
+                            if len(matching_players) >= 50:
+                                break
+                    except Exception as player_error:
+                        log_error(f"Error processing player {getattr(player, 'name', 'unknown')}: {str(player_error)}")
+                        continue
+            except Exception as e:
+                log_error(f"Error searching free agents: {str(e)}")
         
-        # Remove duplicates based on player name (in case player appears in both searches)
-        seen_names = set()
-        unique_players = []
+        # Deduplicate by player ID keeping highest score
+        player_map: Dict[Any, Dict[str, Any]] = {}
         for player in matching_players:
-            name = player.get("name", "")
-            if name not in seen_names:
-                seen_names.add(name)
-                unique_players.append(player)
+            pid = player.get('player_id')
+            if pid is None:
+                continue
+            current_best = player_map.get(pid)
+            if current_best is None or player.get('match_score', 0) > current_best.get('match_score', 0):
+                player_map[pid] = player
         
-        # Sort by name for consistent ordering
-        unique_players.sort(key=lambda p: p.get("name", ""))
-        
+        unique_players = list(player_map.values())
+        unique_players.sort(key=lambda p: (-p.get('match_score', 0), p.get('name', '').lower()))
         return unique_players
     
     except Exception as e:
@@ -402,11 +510,9 @@ def get_waiver_claims(league_id: int, limit: int = 25, year: Optional[int] = Non
                         }
                         waiver_claims.append(claim_dict)
                     except Exception as e:
-                        from utils import log_error
                         log_error(f"Error processing waiver claim: {str(e)}")
                         continue
             except Exception as e:
-                from utils import log_error
                 log_error(f"Error fetching waiver claims: {str(e)}")
         
         # Method 2: Fallback to activity filtering
