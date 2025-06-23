@@ -4,8 +4,8 @@ Handles team rosters, team info, and team schedules
 """
 
 from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, team_to_dict, player_to_dict
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, team_to_dict, player_to_dict
+from baseball_mcp.auth import auth_service
 
 def get_team_roster(league_id: int, team_id: int, year: Optional[int] = None,
                    session_id: str = "default_session") -> Dict[str, Any]:
@@ -49,7 +49,7 @@ def get_team_roster(league_id: int, team_id: int, year: Optional[int] = None,
             
             # Add lineup slot information if available
             if hasattr(player, "lineupSlot"):
-                from metadata import POSITION_MAP
+                from baseball_mcp.metadata import POSITION_MAP
                 player_info["lineup_slot"] = POSITION_MAP.get(player.lineupSlot, f"Slot_{player.lineupSlot}")
             
             roster_info["roster"].append(player_info)

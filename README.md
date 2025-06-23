@@ -16,7 +16,7 @@ Front-end chat UI ──► POST /chat ──► Go Orchestrator (LLM agent)
                            ▲ function-call
                            │
                            ▼
-Fantasy data micro-services (FastAPI / Python)
+Fantasy data micro-services (MCP / Python)
 ```
 
 ## Prerequisites
@@ -28,7 +28,7 @@ Fantasy data micro-services (FastAPI / Python)
 
 ## Repository layout
 
-This mono-repo currently houses **one** data micro-service – an ESPN Fantasy Baseball service that is being upgraded from an MCP stdio server to a RESTful FastAPI container.
+This mono-repo currently houses **one** data micro-service – an ESPN Fantasy Baseball MCP server that is fronted by Apache APISIX via the `mcp-bridge` plugin.
 
 ```
 flaim-app/
@@ -38,12 +38,31 @@ flaim-app/
 *Full details & commands live in* `espn-api-util/README.md`.  In short:
 
 ```bash
-# MCP (legacy, stable)
+# Start the MCP server locally (stdio mode)
 cd espn-api-util && ./setup.sh && ./start-dev.sh
-
-# FastAPI (in progress)
-cd espn-api-util && poetry install && poetry run uvicorn app.main:app --reload
 ```
+
+### Production / HTTP bridge (APISIX)
+
+If you want the ESPN micro-service reachable over the network—e.g. by the Go orchestrator or a web client—run it behind Apache APISIX using the *mcp-bridge* plugin.  The repo already contains a turnkey setup:
+
+```bash
+# inside espn-api-util/
+./start-bridge.sh            # spins up APISIX + the MCP container
+
+# Once the containers are healthy open an SSE stream and call a tool:
+#
+#   curl -N http://localhost:9080/espn-bb/sse
+#
+#   # copy the sessionId from the `data:` line, then:
+#   curl -X POST -H "Content-Type: application/json" \
+#        -d '{"jsonrpc":"2.0","method":"tools/list","id":"1"}' \
+#        "http://localhost:9080/espn-bb/message?sessionId=<id>"
+#
+# The JSON tool index will arrive back on the open SSE stream.
+```
+
+The full build + deployment rationale lives in `espn-api-util/mcp_espn_bridge_plan.md`.
 
 Other components (front-ends, orchestrator, additional providers) will live in their own repos and talk to this service over HTTPS.
 
@@ -54,21 +73,10 @@ Other components (front-ends, orchestrator, additional providers) will live in t
 | Web front-end (Next.js 13 + Vercel AI SDK) | scaffolded ✔︎ |
 | iOS front-end (SwiftUI + Exyte Chat) | prototype ✔︎ |
 | Go orchestrator w/ OpenAI function calling | WIP |
-| ESPN Baseball micro-service (this repo) | v1 MCP ✔︎, v2 FastAPI 🚧 |
+| ESPN Baseball micro-service (this repo) | MCP ✔︎ (exposed via APISIX) |
 | Yahoo / Sleeper services | planned |
 
-Once the FastAPI rewrite hits parity the Docker image will publish to AWS ECR and run on ECS/Fargate behind an ALB.  Credentials are env-vars today but the code is layered so Secrets Manager can be dropped in later.
-
-Once the FastAPI service is live **every endpoint accepts `?stream=true`**.
-When that flag is present the response is sent as **Server-Sent Events** with frames:
-`started` → zero or more `progress` → `done` / `error` plus a heartbeat comment every 25 s.
-The Go orchestrator consumes the stream and relays it to the web / iOS UIs so users see live status while the LLM reasons.
-
-#### Testing streaming endpoints
-
-```bash
-curl -N http://localhost:8000/roster?league_id=YOUR_LEAGUE_ID&stream=true
-```
+Production deploy runs the MCP container behind **Apache APISIX** configured with the `mcp-bridge` plugin.  The gateway converts HTTP requests to MCP frames and streams the results back to clients via **Server-Sent Events (SSE)**.  Secrets (`ESPN_S2`, `SWID`, `LEAGUE_ID`) are injected as environment variables and rotated by the deployment pipeline.
 
 ---
 © 2024 FLAIM

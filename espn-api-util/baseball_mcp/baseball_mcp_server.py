@@ -13,14 +13,14 @@ import logging
 import traceback
 
 # Import all our modules
-from auth import authenticate, logout
-from league import get_league_info, get_league_settings, get_league_standings, get_league_scoreboard  
-from roster import get_team_roster, get_team_info, get_team_schedule
-from matchups import get_week_matchups, get_matchup_boxscore
-from transactions import get_recent_activity, get_waiver_activity, get_trade_activity, get_add_drop_activity, get_team_transactions, get_player_transaction_history, get_lineup_activity, get_settings_activity, get_keeper_activity
-from players import get_player_stats, get_free_agents, get_top_performers, search_players, get_waiver_claims
-from draft import get_draft_results, get_draft_by_round, get_team_draft_picks, get_draft_analysis, get_position_scarcity_analysis
-from metadata import get_positions, get_stat_map, get_activity_types
+from baseball_mcp.auth import authenticate, logout
+from baseball_mcp.league import get_league_info, get_league_settings, get_league_standings, get_league_scoreboard  
+from baseball_mcp.roster import get_team_roster, get_team_info, get_team_schedule
+from baseball_mcp.matchups import get_week_matchups, get_matchup_boxscore
+from baseball_mcp.transactions import get_recent_activity, get_waiver_activity, get_trade_activity, get_add_drop_activity, get_team_transactions, get_player_transaction_history, get_lineup_activity, get_settings_activity, get_keeper_activity
+from baseball_mcp.players import get_player_stats, get_free_agents, get_top_performers, search_players, get_waiver_claims
+from baseball_mcp.draft import get_draft_results, get_draft_by_round, get_team_draft_picks, get_draft_analysis, get_position_scarcity_analysis
+from baseball_mcp.metadata import get_positions, get_stat_map, get_activity_types
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

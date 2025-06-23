@@ -1,0 +1,60 @@
+# Build Python 3.11 from source inside APISIX base image for GLIBC compatibility
+
+######## Python builder stage (using same OS as APISIX) ########
+FROM apache/apisix:dev AS builder
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y gcc make libssl-dev libbz2-dev libffi-dev zlib1g-dev wget curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Download and build Python 3.11.9 from source
+RUN wget -q https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz && \
+    tar -xzf Python-3.11.9.tgz && \
+    cd Python-3.11.9 && \
+    ./configure --prefix=/usr/local --enable-shared \
+                LDFLAGS="-Wl,--rpath=/usr/local/lib" && \
+    make -j$(nproc) && \
+    make altinstall && \
+    ln -s /usr/local/bin/python3.11 /usr/local/bin/python3
+
+# Bootstrap pip and install Poetry
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 - && \
+    /usr/local/bin/pip install --no-cache-dir poetry==1.8.3
+
+# Install project dependencies
+WORKDIR /deps
+COPY pyproject.toml poetry.lock ./
+RUN /usr/local/bin/poetry config virtualenvs.create false && \
+    /usr/local/bin/poetry install --only main --no-interaction
+
+# Clean up build tools to reduce layer size
+RUN apt-get remove -y gcc make wget curl && apt-get autoremove -y && apt-get clean
+
+######## APISIX runtime stage ########
+FROM apache/apisix:dev
+
+# --- tell Lua where the lyaml module lives ---
+ENV LUA_PATH="/usr/local/apisix/deps/share/lua/5.1/?.lua;/usr/local/apisix/deps/share/lua/5.1/?/init.lua;;" \
+    LUA_CPATH="/usr/local/apisix/deps/lib/lua/5.1/?.so;;"
+
+# Copy Python runtime from builder (same OS, compatible GLIBC)
+COPY --from=builder /usr/local/bin/python3.11 /usr/local/bin/
+COPY --from=builder /usr/local/bin/pip        /usr/local/bin/
+COPY --from=builder /usr/local/lib/libpython3.11* /usr/local/lib/
+COPY --from=builder /usr/local/lib/python3.11       /usr/local/lib/python3.11
+
+# ---- MCP code & APISIX conf ----
+WORKDIR /srv
+COPY baseball_mcp /srv/baseball_mcp
+COPY conf /usr/local/apisix/conf
+
+# Set Python path for MCP module resolution
+ENV PYTHONPATH="/srv:/usr/local/lib/python3.11/site-packages" \
+    PYTHONUNBUFFERED="1"
+
+# Expose standard APISIX ports
+EXPOSE 9080 9180
+
+# Use the default APISIX entrypoint
+# In stand-alone mode, APISIX will read conf/apisix.yaml automatically

@@ -8,7 +8,7 @@ import hashlib
 from typing import Dict, Any, Optional
 from espn_api import baseball
 import datetime
-from metadata import POSITION_MAP, STATS_MAP, ACTIVITY_MAP, get_activity_name, ESPN_ACTION_TYPE_MAP
+from baseball_mcp.metadata import POSITION_MAP, STATS_MAP, ACTIVITY_MAP, get_activity_name, ESPN_ACTION_TYPE_MAP
 
 # Apply ESPN API authentication patch to fix None cookies bug
 try:

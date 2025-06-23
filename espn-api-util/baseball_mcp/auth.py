@@ -5,7 +5,7 @@ Handles session management and credential storage
 
 import sys
 from typing import Dict, Optional
-from utils import log_error
+from baseball_mcp.utils import log_error
 
 class AuthService:
     """Manages authentication credentials for ESPN access"""

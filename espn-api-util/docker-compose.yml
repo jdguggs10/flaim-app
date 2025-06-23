@@ -1,0 +1,165 @@
+# Docker Compose configuration for ESPN Fantasy Baseball MCP Bridge
+# Provides local development setup with APISIX gateway and MCP server
+
+# version key removed (Compose v2 ignores it)
+
+services:
+  # APISIX Gateway with MCP Bridge plugin (stand-alone mode)
+  apisix:
+    build:
+      context: .
+      dockerfile: Dockerfile.apisix
+    container_name: espn-mcp-apisix
+    restart: unless-stopped
+    
+    ports:
+      - "9080:9080"  # HTTP API port
+      - "9180:9180"  # Admin API port (disabled in stand-alone mode)
+      - "9091:9091"  # Prometheus metrics port
+    
+    volumes:
+      - apisix-logs:/usr/local/apisix/logs
+    
+    environment:
+      # ESPN credentials (injected from .env file)
+      ESPN_S2: "${ESPN_S2:-}"
+      SWID: "${SWID:-}"
+      LEAGUE_ID: "${LEAGUE_ID:-}"
+    
+    networks:
+      - mcp-bridge
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # APISIX Development mode - fast code iteration
+  apisix-dev:
+    image: apache/apisix:dev          # born nightly, already has mcp-bridge
+    container_name: espn-mcp-apisix-dev
+    restart: unless-stopped
+    
+    ports:
+      - "9080:9080"  # HTTP API port
+      - "9180:9180"  # Admin API port (disabled in stand-alone mode)
+      - "9091:9091"  # Prometheus metrics port
+    
+    volumes:
+      - apisix-logs:/usr/local/apisix/logs
+      # Live code mounts for development
+      - ./baseball_mcp:/srv/baseball_mcp:ro
+      - ./pyproject.toml:/srv/pyproject.toml:ro
+      - ./poetry.lock:/srv/poetry.lock:ro
+      - ./conf:/usr/local/apisix/conf:ro
+    
+    environment:
+      # ESPN credentials (injected from .env file)
+      ESPN_S2: "${ESPN_S2:-}"
+      SWID: "${SWID:-}"
+      LEAGUE_ID: "${LEAGUE_ID:-}"
+      PYTHONPATH: "/srv"
+      PYTHONUNBUFFERED: "1"
+    
+    networks:
+      - mcp-bridge
+    
+    # Install Python at runtime for development speed
+    command: >
+      bash -c "
+        export LUA_PATH='/usr/local/apisix/deps/share/lua/5.1/?.lua;/usr/local/apisix/deps/share/lua/5.1/?/init.lua;;' &&
+        export LUA_CPATH='/usr/local/apisix/deps/lib/lua/5.1/?.so;;' &&
+        echo 'deb http://deb.debian.org/debian bullseye-backports main' > /etc/apt/sources.list.d/backports.list &&
+        apt-get update &&
+        apt-get -t bullseye-backports install -y python3.11 python3.11-venv python3.11-distutils &&
+        ln -sf /usr/bin/python3.11 /usr/local/bin/python &&
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python &&
+        pip install --no-cache-dir poetry==1.8.3 &&
+        cd /srv &&
+        poetry config virtualenvs.create false &&
+        poetry install --only main --no-interaction &&
+        /usr/local/apisix/docker/run.sh"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Longer startup time due to runtime install
+    
+    profiles:
+      - development
+
+  # ESPN MCP Server (for standalone testing)
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: espn-mcp-server
+    restart: unless-stopped
+    
+    environment:
+      # ESPN authentication
+      ESPN_S2: "${ESPN_S2:-}"
+      SWID: "${SWID:-}"
+      LEAGUE_ID: "${LEAGUE_ID:-}"
+      
+      # Python configuration
+      PYTHONPATH: "/srv"
+      PYTHONUNBUFFERED: "1"
+    
+    volumes:
+      # Mount source code for development
+      - ./baseball_mcp:/srv/baseball_mcp:ro
+      - ./pyproject.toml:/srv/pyproject.toml:ro
+      - ./poetry.lock:/srv/poetry.lock:ro
+    
+    networks:
+      - mcp-bridge
+    
+    # Keep container running for debugging
+    tty: true
+    stdin_open: true
+    
+    # Override entrypoint for debugging (optional)
+    # command: ["sleep", "infinity"]
+
+  # Prometheus for monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: espn-mcp-prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "9090:9090"
+    
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    
+    networks:
+      - mcp-bridge
+    
+    profiles:
+      - monitoring
+
+networks:
+  mcp-bridge:
+    driver: bridge
+    name: espn-mcp-bridge
+
+volumes:
+  apisix-logs:
+    name: espn-mcp-apisix-logs
+  prometheus-data:
+    name: espn-mcp-prometheus-data

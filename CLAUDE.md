@@ -5,6 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Rules
 Be brutally honest, don't be a yes man. If I am wrong, point it out bluntly. I need honest feedback on my code. Do not do more than what you were specifically asked to do. Do not take shortcuts. Stop working if you need user feedback or if the plan needs to change. If the API or protocol are unfamiliar, use web search to learn.
 
+**Bridge context hint:** When testing the ESPN MCP bridge, remember the two-step pattern – open `/espn-bb/sse`, grab `sessionId`, then POST JSON-RPC to `/espn-bb/message?sessionId=…`.  Example snippets in the repo follow this pattern.
+
 ## Model Configuration
 - DEFAULT_MODEL: claude-sonnet-4
 - EXTENDED_THINKING: 

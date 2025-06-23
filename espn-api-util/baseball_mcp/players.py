@@ -6,8 +6,8 @@ Handles player stats, free agents, and player queries
 from typing import Dict, Any, Optional, List, Generator, Tuple
 import traceback
 from rapidfuzz import fuzz
-from utils import league_service, handle_error, player_to_dict, log_error
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, player_to_dict, log_error
+from baseball_mcp.auth import auth_service
 
 def fuzzy_match_name(search_term: str, player_name: str, threshold: int = 80) -> Tuple[bool, int]:
     """Perform fuzzy matching between a search term and a player name.
@@ -171,7 +171,7 @@ def get_player_stats(league_id: int, player_name: str, year: Optional[int] = Non
         
         # Add weekly and season stats if available
         if hasattr(player, "stats") and player.stats:
-            from metadata import STATS_MAP
+            from baseball_mcp.metadata import STATS_MAP
             
             weekly_stats: Dict[str, Any] = {}
             season_stats: Dict[str, Any] = {}
@@ -242,7 +242,7 @@ def get_free_agents(league_id: int, week: Optional[int] = None, position: Option
             fa_params["position_id"] = position_id
         elif position is not None:
             # Convert position name to position ID if needed
-            from metadata import POSITION_MAP
+            from baseball_mcp.metadata import POSITION_MAP
             # Create reverse mapping
             position_name_to_id = {v: k for k, v in POSITION_MAP.items() if v == position}
             if position_name_to_id:
@@ -517,7 +517,7 @@ def get_waiver_claims(league_id: int, limit: int = 25, year: Optional[int] = Non
         
         # Method 2: Fallback to activity filtering
         if not waiver_claims:
-            from transactions import get_waiver_activity
+            from baseball_mcp.transactions import get_waiver_activity
             waiver_activities = get_waiver_activity(league_id, limit, year, session_id)
             
             for activity in waiver_activities:

@@ -4,8 +4,8 @@ Handles league info, settings, standings, and scoreboard
 """
 
 from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, team_to_dict, boxscore_to_dict
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, team_to_dict, boxscore_to_dict
+from baseball_mcp.auth import auth_service
 
 def get_league_info(league_id: int, year: Optional[int] = None, 
                    session_id: str = "default_session") -> Dict[str, Any]:

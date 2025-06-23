@@ -4,8 +4,8 @@ Handles league transactions, adds, drops, trades, and waivers
 """
 
 from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, activity_to_dict
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, activity_to_dict, log_error
+from baseball_mcp.auth import auth_service
 
 def get_recent_activity(league_id: int, limit: int = 25, activity_type: Optional[str] = None, 
                        offset: int = 0, year: Optional[int] = None,
@@ -30,7 +30,6 @@ def get_recent_activity(league_id: int, limit: int = 25, activity_type: Optional
         espn_s2 = credentials.get('espn_s2') if credentials else None
         swid = credentials.get('swid') if credentials else None
         
-        from utils import log_error
         log_error(f"Retrieved credentials for session {session_id}: {credentials}")
         log_error(f"ESP_S2 length: {len(espn_s2) if espn_s2 else 0}, SWID length: {len(swid) if swid else 0}")
         
@@ -41,7 +40,6 @@ def get_recent_activity(league_id: int, limit: int = 25, activity_type: Optional
         activities = None
         fetch_size = min(limit + offset + 50, 100)  # ESPN API usually limits to 100
         
-        from utils import log_error
         log_error(f"Attempting to fetch recent activity for league {league_id}, year {year}")
         
         try:

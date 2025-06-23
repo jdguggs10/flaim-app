@@ -34,10 +34,16 @@ source .venv/bin/activate
 echo "⬆️ Upgrading pip..."
 pip install --upgrade pip
 
-# Install dependencies
+# Install Poetry if not available
+if ! command -v poetry &> /dev/null; then
+    echo "📥 Installing Poetry..."
+    pip install poetry
+fi
+
+# Install dependencies using Poetry
 echo "📥 Installing dependencies..."
 if [ -f "pyproject.toml" ]; then
-    pip install -e .
+    poetry install
 else
     echo "❌ pyproject.toml not found"
     exit 1

@@ -1,0 +1,61 @@
+# APISIX Route Configuration for ESPN Fantasy Baseball MCP Bridge
+# Defines the route that bridges HTTP/SSE requests to MCP stdio
+
+routes:
+  # APISIX Status route (health-check)
+  - id: apisix-status
+    name: "APISIX Status"
+    desc: "Health check endpoint served by node-status/public-api plugins"
+    uri: /apisix/status
+    methods:
+      - GET
+    plugins:
+      public-api: {}
+    upstream:
+      type: roundrobin
+      nodes:
+        - host: 127.0.0.1
+          port: 1
+          weight: 1
+
+  # ESPN MCP Bridge route  
+  - id: espn-bb-mcp-bridge
+    name: "ESPN Fantasy Baseball MCP Bridge"
+    desc: "Bridges HTTP/SSE requests to ESPN Fantasy Baseball MCP server via stdio"
+    
+    # Match all requests under /espn-bb path
+    uri: /espn-bb/*
+    
+    # HTTP methods supported
+    methods:
+      - GET
+      - POST
+      - OPTIONS
+    
+    # Plugin configuration
+    plugins:
+      # CORS support for web clients
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,OPTIONS"
+        allow_headers: "Authorization,Content-Type,Accept"
+        allow_credentials: true
+        max_age: 86400
+        
+      # MCP Bridge plugin - core functionality  
+      mcp-bridge:
+        base_uri: "/espn-bb"
+        command: "/bin/sh"
+        args:
+          - "-c"
+          - "ESPN_S2=$ESPN_S2 SWID=$SWID LEAGUE_ID=$LEAGUE_ID PYTHONPATH=/srv PYTHONUNBUFFERED=1 exec /usr/local/bin/python3.11 -m baseball_mcp.baseball_mcp_server"
+        
+    # Upstream configuration (required but not used with mcp-bridge)
+    upstream:
+      type: roundrobin
+      nodes:
+        - host: 127.0.0.1
+          port: 1
+          weight: 1
+
+#END

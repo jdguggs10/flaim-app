@@ -4,8 +4,8 @@ Handles weekly matchups and detailed box score information
 """
 
 from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, boxscore_to_dict
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, boxscore_to_dict
+from baseball_mcp.auth import auth_service
 
 def get_week_matchups(league_id: int, week: Optional[int] = None, year: Optional[int] = None,
                      session_id: str = "default_session") -> List[Dict[str, Any]]:
@@ -157,7 +157,7 @@ def get_matchup_boxscore(league_id: int, week: int, home_team_id: int, year: Opt
 
 def _get_category_summary(box_score: Any) -> Dict[str, Any]:
     """Helper function to summarize category performance"""
-    from metadata import STATS_MAP
+    from baseball_mcp.metadata import STATS_MAP
     
     category_summary = {
         "categories_won": {
@@ -202,7 +202,7 @@ def _get_category_summary(box_score: Any) -> Dict[str, Any]:
 
 def _get_detailed_category_breakdown(box_score: Any) -> Dict[str, Any]:
     """Helper function to provide detailed category analysis"""
-    from metadata import STATS_MAP
+    from baseball_mcp.metadata import STATS_MAP
     
     breakdown = {
         "total_categories": 0,

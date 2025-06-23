@@ -2,25 +2,46 @@
 
 A comprehensive Model Context Protocol (MCP) server providing seamless access to ESPN Fantasy Baseball data through Claude Desktop and other MCP-compatible AI assistants.
 
-In parallel a **FastAPI rewrite (v2)** is under way.  That version keeps the same tool surface but exposes HTTP endpoints, plus an optional `?stream=true` flag that emits Server-Sent Events (started / progress / done) instead of waiting for the full JSON payload.
+This server is now **deployed behind Apache APISIX** using the `mcp-bridge` plugin.  The gateway converts incoming HTTP requests into MCP stdio frames and streams responses back to clients over Server-Sent Events (SSE).  No code changes were required to the MCP – it remains a lightweight, single-process Python program.
 
 ## 🚀 Quick Start
 
-### Initial Setup
+### Local development (stdio)
+
 ```bash
 cd espn-api-util
-./setup.sh                    # Create virtual environment and install dependencies
+./setup.sh       # one-time: create venv & install deps
+./start-dev.sh   # runs the server on stdin/stdout for Claude Desktop, Cursor, etc.
 ```
 
-### Development Server
+### Production bridge (APISIX)
+
 ```bash
-./start-dev.sh                # Start server in stdio mode for local development
+# build + run the gateway & MCP container
+./start-bridge.sh --rebuild   # add --dev for live-code mounting
+
+# smoke-test (establish a session & call the MCP tool index)
+# 1) Open an SSE stream and capture the session endpoint:
+#
+#    curl -N http://localhost:9080/espn-bb/sse
+#
+#    # the stream immediately yields something like:
+#    #   event: endpoint
+#    #   data: /espn-bb/message?sessionId=9def9f87-d9d1-4104-98d7-fd2333e008ce
+#
+# 2) Copy the full data URL and POST a JSON-RPC payload to list tools:
+#
+#    curl -X POST -H "Content-Type: application/json" \
+#      -d '{"jsonrpc":"2.0","method":"tools/list","id":"test"}' \
+#      "http://localhost:9080/espn-bb/message?sessionId=9def9f87-d9d1-4104-98d7-fd2333e008ce"
+#
+#    A 202 Accepted confirms the request was queued; the streamed response will
+#    arrive on the same SSE connection.
 ```
 
-### Verification
-Ask Claude Desktop to:
-- `Use the metadata_get_positions tool to show available positions`
-- `Get league info for league ID [your-league-id]`
+The bridge converts HTTP ⇄ stdio via the `mcp-bridge` plugin.  Architecture and Dockerfile details live in `mcp_espn_bridge_plan.md`.
+
+> TL;DR for callers: open `/espn-bb/sse`, grab the `sessionId` in the `endpoint` event, then POST JSON-RPC to `/espn-bb/message?sessionId=…`.
 
 ## 🏗️ Architecture
 
@@ -210,9 +231,13 @@ Analyze position scarcity:
 
 ## 📋 Requirements
 
-- **Python**: 3.12+
-- **Dependencies**: `espn-api>=0.45.0`, `mcp[cli]>=1.5.0`
-- **Optional**: Claude Desktop for AI integration
+| Layer | Purpose | Version |
+|-------|---------|---------|
+| Python runtime | MCP server | **3.11.x** (matches the container build) |
+| espn-api | ESPN data access | ≥ 0.45.0 |
+| mcp[cli] | STDIO protocol helpers | ≥ 1.5.0 |
+
+> Note: The Docker image already embeds Python 3.11 and all Poetry-pinned deps; you only need a local Python install when running `setup.sh` for development.
 
 ## ⚠️ Important Notes
 

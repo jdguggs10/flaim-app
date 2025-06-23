@@ -4,8 +4,8 @@ Handles draft picks, draft order, and draft analysis
 """
 
 from typing import Dict, Any, Optional, List
-from utils import league_service, handle_error, pick_to_dict, team_to_dict, player_to_dict
-from auth import auth_service
+from baseball_mcp.utils import league_service, handle_error, pick_to_dict, team_to_dict, player_to_dict, log_error
+from baseball_mcp.auth import auth_service
 
 def get_draft_results(league_id: int, year: Optional[int] = None,
                      session_id: str = "default_session") -> List[Dict[str, Any]]:
@@ -41,7 +41,6 @@ def get_draft_results(league_id: int, year: Optional[int] = None,
                 draft_picks.append(pick_dict)
             except Exception as e:
                 # If we can't process an individual pick, log and continue
-                from utils import log_error
                 log_error(f"Error processing draft pick: {str(e)}")
                 continue
         

@@ -34,16 +34,13 @@ fi
 echo "🔧 Activating virtual environment..." >&2
 source "$VENV_PATH/bin/activate"
 
-# Change to the baseball_mcp directory for proper module imports
-cd "$BASEBALL_MCP_DIR"
-
-# Set Python path to ensure proper imports
-export PYTHONPATH="$BASEBALL_MCP_DIR:$PYTHONPATH"
+# Change to the project root directory
+cd "$SCRIPT_DIR"
 
 echo "🐍 Python: $(which python)" >&2
 echo "📂 Working directory: $(pwd)" >&2
 echo "🚀 Starting MCP server in stdio mode..." >&2
 echo "" >&2
 
-# Start the MCP server in stdio mode
-exec python baseball_mcp_server.py
+# Start the MCP server using Poetry
+exec poetry run python -m baseball_mcp.baseball_mcp_server
