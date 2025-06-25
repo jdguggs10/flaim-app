@@ -1,7 +1,7 @@
 # ESPN Fantasy Baseball MCP Bridge  
 *A full walkthrough of exposing a `stdio` MCP server over HTTP using Apache APISIX*
 
-> Status – June 2025: bridge works end-to-end.  `GET /espn-bb/sse` streams; tool calls succeed.  Remaining work = performance tuning & production infra.
+> Status – June 25, 2025: bridge works end-to-end.  `GET /espn-bb/sse` streams; tool calls succeed via JSON-RPC.  Bridge is operational and ready for production deployment.
 
 ---
 
@@ -89,23 +89,32 @@ plugins:
 `espn-api-util/conf/apisix.yaml` (only the relevant route)
 ```yaml
 routes:
-  - id: espn-mcp
+  - id: espn-bb-mcp-bridge
+    name: "ESPN Fantasy Baseball MCP Bridge"
     uri: /espn-bb/*
+    methods:
+      - GET
+      - POST
+      - OPTIONS
     plugins:
       cors:
         allow_origins: "*"
+        allow_methods: "GET,POST,OPTIONS"
+        allow_headers: "Authorization,Content-Type,Accept"
+        allow_credentials: true
+        max_age: 86400
       mcp-bridge:
-        base_uri: /espn-bb
-        command: /usr/local/bin/python3.11
-        args: ["-m", "baseball_mcp.baseball_mcp_server"]
-        env:
-          ESPN_S2: "$ESPN_S2"
-          SWID: "$SWID"
-          LEAGUE_ID: "$LEAGUE_ID"
+        base_uri: "/espn-bb"
+        command: "/bin/sh"
+        args:
+          - "-c"
+          - "ESPN_S2=$ESPN_S2 SWID=$SWID LEAGUE_ID=$LEAGUE_ID PYTHONPATH=/srv PYTHONUNBUFFERED=1 exec /usr/local/bin/python3.11 -m baseball_mcp.baseball_mcp_server"
     upstream:          # dummy upstream required by schema
       type: roundrobin
       nodes:
-        127.0.0.1:1: 1
+        - host: 127.0.0.1
+          port: 1
+          weight: 1
 #END
 ```
 Note the **dummy upstream** – APISIX insists every route has one even if the plugin never forwards.
@@ -113,15 +122,21 @@ Note the **dummy upstream** – APISIX insists every route has one even if the p
 ## 5  Running it locally
 ```bash
 cd espn-api-util
+
+# Setup: Create .env file with ESPN credentials (required)
+cp .env.example .env  # Edit with your ESPN_S2, SWID, LEAGUE_ID
+
 ./start-bridge.sh --rebuild       # wrapper around docker-compose build up -d
 
 # open a second terminal
 curl -N http://localhost:9080/espn-bb/sse
-# copy the sessionId …
+# copy the sessionId from the 'data:' field of the 'endpoint' event
 
 curl -X POST -H 'Content-Type: application/json' \
      -d '{"jsonrpc":"2.0","method":"tools/list","id":"1"}' \
      "http://localhost:9080/espn-bb/message?sessionId=<id>"
+     
+# Response streams back on the SSE connection from the first curl command
 ```
 
 ## 6  Common failure modes & fixes
@@ -143,4 +158,4 @@ curl -s http://localhost:9080/apisix/status | jq .status.total   # should print 
 * Scripted credential rotation via Kubernetes secret + rolling reload.
 
 ---
-*Document last rebuilt: 23 Jun 2025 after first successful end-to-end test.*
+*Document last updated: 25 Jun 2025 after successful bridge deployment and testing.*

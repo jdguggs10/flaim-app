@@ -48,6 +48,9 @@ If you want the ESPN micro-service reachable over the network—e.g. by the Go o
 
 ```bash
 # inside espn-api-util/
+# Prerequisites: Create .env file with ESPN credentials
+cp .env.example .env         # Edit with your ESPN_S2, SWID, LEAGUE_ID
+
 ./start-bridge.sh            # spins up APISIX + the MCP container
 
 # Once the containers are healthy open an SSE stream and call a tool:

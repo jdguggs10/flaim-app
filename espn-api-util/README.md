@@ -17,6 +17,9 @@ cd espn-api-util
 ### Production bridge (APISIX)
 
 ```bash
+# Prerequisites: Create .env file with ESPN credentials
+cp .env.example .env  # Edit with your ESPN_S2, SWID, LEAGUE_ID
+
 # build + run the gateway & MCP container
 ./start-bridge.sh --rebuild   # add --dev for live-code mounting
 
@@ -29,14 +32,14 @@ cd espn-api-util
 #    #   event: endpoint
 #    #   data: /espn-bb/message?sessionId=9def9f87-d9d1-4104-98d7-fd2333e008ce
 #
-# 2) Copy the full data URL and POST a JSON-RPC payload to list tools:
+# 2) Copy the sessionId from the data field and POST a JSON-RPC payload:
 #
 #    curl -X POST -H "Content-Type: application/json" \
 #      -d '{"jsonrpc":"2.0","method":"tools/list","id":"test"}' \
 #      "http://localhost:9080/espn-bb/message?sessionId=9def9f87-d9d1-4104-98d7-fd2333e008ce"
 #
 #    A 202 Accepted confirms the request was queued; the streamed response will
-#    arrive on the same SSE connection.
+#    arrive on the same SSE connection from step 1.
 ```
 
 The bridge converts HTTP ⇄ stdio via the `mcp-bridge` plugin.  Architecture and Dockerfile details live in `mcp_espn_bridge_plan.md`.
